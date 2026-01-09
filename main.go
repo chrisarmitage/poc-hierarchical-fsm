@@ -6,39 +6,54 @@ import (
 
 func main() {
 	// Example usage
-	tasks := []Task{
-		// &SetSleepPeriodTask{},
-		&SetProtectedValueTask{},
-		// Add more tasks here
-	}
+	// tasks := []Task{
+	// 	// &SetSleepPeriodTask{},
+	// 	&SetProtectedValueTask{},
+	// 	// Add more tasks here
+	// }
 
 	// Create a task runner and start it
-	taskRunner := NewTaskRunner(tasks)
-	err := taskRunner.Start()
-	if err != nil {
-		fmt.Println("Error starting tasks:", err)
-		return
-	}
+	// taskRunner := NewTaskRunner(tasks)
+	// err := taskRunner.Start()
+	// if err != nil {
+	// 	fmt.Println("Error starting tasks:", err)
+	// 	return
+	// }
 
-	// Simulate handling events
+	// init DeviceFSM
+	deviceFSM := &DeviceFSM{state: "Ready"}
+
+	// Simulate incoming events
 	events := []Event{
+		StartConfig{},
+		DeviceAck{}, // StartConfig ack
+
+		DeviceAck{}, // SetSleepPeriod ack
+		
+		DeviceAck{}, // SetProtectedValue acks
 		DeviceAck{},
 		DeviceAck{},
-		DeviceAck{},
+
+		DeviceAck{}, // EndConfig ack
 		// Add more events here
 	}
 
-	
 	for _, event := range events {
-		done, err := taskRunner.HandleEvent(event)
+		err := deviceFSM.HandleEvent(event)
 		if err != nil {
 			fmt.Println("Error handling event:", err)
 			return
 		}
-		if done {
-			fmt.Println("All tasks completed successfully")
-			break
-		}
+	}
+
+	fmt.Println("All tasks completed successfully")
+}
+
+func buildTasks() []Task {
+	return []Task{
+		&SetSleepPeriodTask{},
+		&SetProtectedValueTask{},
+		// Add more tasks here
 	}
 }
 
@@ -137,6 +152,8 @@ func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
 		switch event.(type) {
 		case DeviceAck:
 			t.state = "Done"
+			fmt.Printf("SetSleepPeriodTask: acknowledged, task complete\n")
+			fmt.Printf("SetSleepPeriodTask: ** completed successfully\n")
 			return TaskSucceeded
 		case DeviceReject, Timeout:
 			return TaskFailed
@@ -189,6 +206,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 		case DeviceAck:
 			t.state = "Done"
 			fmt.Printf("SetProtectedValueTask: value lock acknowledged, task complete\n")
+			fmt.Printf("SetProtectedValueTask: ** completed successfully\n")
 			return TaskSucceeded
 		case DeviceReject, Timeout:
 			return TaskFailed
@@ -196,3 +214,52 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 	}
 	return TaskRunning
 }
+
+// device-level FSM
+type DeviceFSM struct {
+	state State
+	taskRunner *TaskRunner
+}
+
+func (d *DeviceFSM) HandleEvent(event Event) error {
+	switch d.state {
+	case "Ready":
+		if _, ok := event.(StartConfig); ok {
+			// Enter config mode
+			d.state = "PendingConfiguring"
+			// send StartConfig command
+			fmt.Printf("DeviceFSM: entering PendingConfiguring state\n")
+		}
+	case "PendingConfiguring":
+		if _, ok := event.(DeviceAck); ok {
+			d.state = "Configuring"
+			fmt.Printf("DeviceFSM: entering Configuring state, starting tasks\n")
+			d.taskRunner = NewTaskRunner(buildTasks())
+			return d.taskRunner.Start()
+		}
+	case "Configuring":
+		done, err := d.taskRunner.HandleEvent(event)
+		fmt.Printf("DeviceFSM: task runner returned done=%v, err=%v for event %T\n", done, err, event)
+		if err != nil {
+			// abort policy decision here
+			d.state = "EndingConfiguring"
+			fmt.Printf("DeviceFSM: task runner error, entering EndingConfiguring state\n")
+			// send EndConfig
+			return err
+		}
+		if done {
+			d.state = "EndingConfiguring"
+			fmt.Printf("DeviceFSM: tasks completed, entering EndingConfiguring state\n")
+			// send EndConfig
+		}
+	case "EndingConfiguring":
+		if _, ok := event.(DeviceAck); ok {
+			d.state = "Ready"
+			fmt.Printf("DeviceFSM: configuration ended, entering Ready state\n")
+			fmt.Printf("DeviceFSM: ** all tasks completed successfully **\n")
+		}
+	}
+	return nil
+}
+
+type StartConfig struct{}
