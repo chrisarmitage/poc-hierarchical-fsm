@@ -7,7 +7,8 @@ import (
 func main() {
 	// Example usage
 	tasks := []Task{
-		&SetSleepPeriodTask{},
+		// &SetSleepPeriodTask{},
+		&SetProtectedValueTask{},
 		// Add more tasks here
 	}
 
@@ -21,6 +22,8 @@ func main() {
 
 	// Simulate handling events
 	events := []Event{
+		DeviceAck{},
+		DeviceAck{},
 		DeviceAck{},
 		// Add more events here
 	}
@@ -134,6 +137,58 @@ func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
 		switch event.(type) {
 		case DeviceAck:
 			t.state = "Done"
+			return TaskSucceeded
+		case DeviceReject, Timeout:
+			return TaskFailed
+		}
+	}
+	return TaskRunning
+}
+
+// Multi-step task example
+type SetProtectedValueTask struct {
+	state State
+}
+
+func (t *SetProtectedValueTask) Name() string {
+	return "SetProtectedValue"
+}
+
+
+func (t *SetProtectedValueTask) Start() error {
+	t.state = "PendingValueUnlock"
+	fmt.Printf("SetProtectedValueTask: sending value unlock command\n")
+	// send command to device
+	return nil
+}
+
+func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
+	switch t.state {
+	case "PendingValueUnlock":
+		switch event.(type) {
+		case DeviceAck:
+			t.state = "PendingSetValue"
+			fmt.Printf("SetProtectedValueTask: value unlock acknowledged, sending set value command\n")
+			// send set value command to device
+			return TaskRunning
+		case DeviceReject, Timeout:
+			return TaskFailed
+		}
+	case "PendingSetValue":
+		switch event.(type) {
+		case DeviceAck:
+			t.state = "PendingValueLock"
+			fmt.Printf("SetProtectedValueTask: set value acknowledged, sending value lock command\n")
+			// send value lock command to device
+			return TaskRunning
+		case DeviceReject, Timeout:
+			return TaskFailed
+		}
+	case "PendingValueLock":
+		switch event.(type) {
+		case DeviceAck:
+			t.state = "Done"
+			fmt.Printf("SetProtectedValueTask: value lock acknowledged, task complete\n")
 			return TaskSucceeded
 		case DeviceReject, Timeout:
 			return TaskFailed
