@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 )
 
 func main() {
@@ -28,6 +29,9 @@ func main() {
 		StartConfig{},
 		DeviceAck{}, // StartConfig ack
 
+		Timeout{}, // SetSleepPeriod timeout
+		Timeout{},
+		Timeout{},
 		DeviceAck{}, // SetSleepPeriod ack
 		
 		DeviceAck{}, // SetProtectedValue acks
@@ -74,7 +78,8 @@ type TaskResult int
 const (
 	TaskRunning TaskResult = iota
 	TaskSucceeded
-	TaskFailed
+	TaskFailedRetryable
+	TaskFailedPermanent
 )
 
 type Task interface {
@@ -123,8 +128,12 @@ func (tr *TaskRunner) HandleEvent(event Event) (done bool, err error) {
 			return true, nil
 		}
 		return false, tr.tasks[tr.index].Start()
+	
+	case TaskFailedRetryable:
+		// optional: retry entire task
+		return false, task.Start()
 
-	case TaskFailed:
+	case TaskFailedPermanent:
 		return false, fmt.Errorf("task %s failed", task.Name())
 	}
 
@@ -134,6 +143,9 @@ func (tr *TaskRunner) HandleEvent(event Event) (done bool, err error) {
 // Single-step task example
 type SetSleepPeriodTask struct {
 	state State
+	retries int
+	max     int
+	backoff Backoff
 }
 
 func (t *SetSleepPeriodTask) Name() string {
@@ -142,11 +154,18 @@ func (t *SetSleepPeriodTask) Name() string {
 
 func (t *SetSleepPeriodTask) Start() error {
 	t.state = "Pending"
+	t.retries = 0
+	t.max = 5
+	if t.backoff == nil {
+		t.backoff = NewExponentialBackoff(1*time.Second, 16*time.Second)
+	}
+	t.backoff.Reset()
 	// send command to device
 	return nil
 }
 
 func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
+	fmt.Printf("SetSleepPeriodTask: handling event %T in state %s\n", event, t.state)
 	switch t.state {
 	case "Pending":
 		switch event.(type) {
@@ -155,8 +174,18 @@ func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
 			fmt.Printf("SetSleepPeriodTask: acknowledged, task complete\n")
 			fmt.Printf("SetSleepPeriodTask: ** completed successfully\n")
 			return TaskSucceeded
-		case DeviceReject, Timeout:
-			return TaskFailed
+		case Timeout:
+			t.retries++
+			if t.retries > t.max {
+				return TaskFailedPermanent
+			}
+			backoffDuration := t.backoff.Next()
+			fmt.Printf("SetSleepPeriodTask: timeout, retrying in %v (attempt %d/%d)\n", backoffDuration, t.retries, t.max)
+			time.Sleep(backoffDuration)
+			// resend command to device
+			return TaskRunning
+		case DeviceReject:
+			return TaskFailedPermanent
 		}
 	}
 	return TaskRunning
@@ -189,7 +218,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			// send set value command to device
 			return TaskRunning
 		case DeviceReject, Timeout:
-			return TaskFailed
+			return TaskFailedPermanent
 		}
 	case "PendingSetValue":
 		switch event.(type) {
@@ -199,7 +228,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			// send value lock command to device
 			return TaskRunning
 		case DeviceReject, Timeout:
-			return TaskFailed
+			return TaskFailedPermanent
 		}
 	case "PendingValueLock":
 		switch event.(type) {
@@ -209,7 +238,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			fmt.Printf("SetProtectedValueTask: ** completed successfully\n")
 			return TaskSucceeded
 		case DeviceReject, Timeout:
-			return TaskFailed
+			return TaskFailedPermanent
 		}
 	}
 	return TaskRunning
@@ -263,3 +292,37 @@ func (d *DeviceFSM) HandleEvent(event Event) error {
 }
 
 type StartConfig struct{}
+
+// backoff utility class
+
+// backoff
+type Backoff interface {
+	Next() time.Duration
+	Reset()
+}
+
+type ExponentialBackoff struct {
+	base time.Duration
+	max  time.Duration
+	curr time.Duration
+}
+
+func NewExponentialBackoff(base, max time.Duration) *ExponentialBackoff {
+	return &ExponentialBackoff{base: base, max: max}
+}
+
+func (b *ExponentialBackoff) Next() time.Duration {
+	if b.curr == 0 {
+		b.curr = b.base
+	} else {
+		b.curr *= 2
+		if b.curr > b.max {
+			b.curr = b.max
+		}
+	}
+	return b.curr
+}
+
+func (b *ExponentialBackoff) Reset() {
+	b.curr = 0
+}
