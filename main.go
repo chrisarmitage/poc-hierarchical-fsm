@@ -21,42 +21,59 @@ func main() {
 	// 	return
 	// }
 
+	eventsChan := make(chan Event)
+
+	sender := NewFakeSender(eventsChan)
+
 	// init DeviceFSM
-	deviceFSM := &DeviceFSM{state: "Ready"}
+	deviceFSM := NewDeviceFSM(sender)
 
 	// Simulate incoming events
-	events := []Event{
-		StartConfig{},
-		DeviceAck{}, // StartConfig ack
+	// events := []Event{
+	// 	StartConfig{},
+	// 	DeviceAck{}, // StartConfig ack
 
-		Timeout{}, // SetSleepPeriod timeout
-		Timeout{},
-		Timeout{},
-		DeviceAck{}, // SetSleepPeriod ack
+	// 	Timeout{}, // SetSleepPeriod timeout
+	// 	Timeout{},
+	// 	Timeout{},
+	// 	DeviceAck{}, // SetSleepPeriod ack
 		
-		DeviceAck{}, // SetProtectedValue acks
-		DeviceAck{},
-		DeviceAck{},
+	// 	DeviceAck{}, // SetProtectedValue acks
+	// 	DeviceAck{},
+	// 	DeviceAck{},
 
-		DeviceAck{}, // EndConfig ack
-		// Add more events here
-	}
+	// 	DeviceAck{}, // EndConfig ack
+	// 	// Add more events here
+	// }
 
-	for _, event := range events {
+	// send intiial event
+	go func ()  {
+		time.Sleep(1 * time.Second)
+		eventsChan <- StartConfig{}
+	}()
+
+
+	for event := range eventsChan {
+		fmt.Printf("\nMain: received event %T\n", event)
 		err := deviceFSM.HandleEvent(event)
 		if err != nil {
 			fmt.Println("Error handling event:", err)
 			return
+		}
+
+		if eventAck, ok := event.(EndConfigAck); ok {
+			fmt.Printf("Main: received EndConfigAck event %T, closing events channel\n", eventAck)
+			close(eventsChan)
 		}
 	}
 
 	fmt.Println("All tasks completed successfully")
 }
 
-func buildTasks() []Task {
+func buildTasks(sender DeviceCommandSender) []Task {
 	return []Task{
-		&SetSleepPeriodTask{},
-		&SetProtectedValueTask{},
+		NewSetSleepPeriodTask(sender),
+		NewSetProtectedValueTask(sender),
 		// Add more tasks here
 	}
 }
@@ -146,6 +163,11 @@ type SetSleepPeriodTask struct {
 	retries int
 	max     int
 	backoff Backoff
+	sender DeviceCommandSender
+}
+
+func NewSetSleepPeriodTask(sender DeviceCommandSender) *SetSleepPeriodTask {
+	return &SetSleepPeriodTask{sender: sender}
 }
 
 func (t *SetSleepPeriodTask) Name() string {
@@ -161,6 +183,7 @@ func (t *SetSleepPeriodTask) Start() error {
 	}
 	t.backoff.Reset()
 	// send command to device
+	t.sender.Send(SetSleepPeriodCommand{})
 	return nil
 }
 
@@ -194,6 +217,11 @@ func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
 // Multi-step task example
 type SetProtectedValueTask struct {
 	state State
+	sender DeviceCommandSender
+}
+
+func NewSetProtectedValueTask(sender DeviceCommandSender) *SetProtectedValueTask {
+	return &SetProtectedValueTask{sender: sender}
 }
 
 func (t *SetProtectedValueTask) Name() string {
@@ -205,6 +233,7 @@ func (t *SetProtectedValueTask) Start() error {
 	t.state = "PendingValueUnlock"
 	fmt.Printf("SetProtectedValueTask: sending value unlock command\n")
 	// send command to device
+	t.sender.Send(ValueUnlockCommand{})
 	return nil
 }
 
@@ -216,6 +245,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			t.state = "PendingSetValue"
 			fmt.Printf("SetProtectedValueTask: value unlock acknowledged, sending set value command\n")
 			// send set value command to device
+			t.sender.Send(SetProtectedValueCommand{})
 			return TaskRunning
 		case DeviceReject, Timeout:
 			return TaskFailedPermanent
@@ -226,6 +256,7 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			t.state = "PendingValueLock"
 			fmt.Printf("SetProtectedValueTask: set value acknowledged, sending value lock command\n")
 			// send value lock command to device
+			t.sender.Send(ValueLockCommand{})
 			return TaskRunning
 		case DeviceReject, Timeout:
 			return TaskFailedPermanent
@@ -248,22 +279,29 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 type DeviceFSM struct {
 	state State
 	taskRunner *TaskRunner
+	sender DeviceCommandSender
+}
+
+func NewDeviceFSM(sender DeviceCommandSender) *DeviceFSM {
+	return &DeviceFSM{state: "Ready", sender: sender}
 }
 
 func (d *DeviceFSM) HandleEvent(event Event) error {
+	fmt.Printf("DeviceFSM: handling event %T in state %s\n", event, d.state)
 	switch d.state {
 	case "Ready":
 		if _, ok := event.(StartConfig); ok {
 			// Enter config mode
 			d.state = "PendingConfiguring"
 			// send StartConfig command
-			fmt.Printf("DeviceFSM: entering PendingConfiguring state\n")
+			fmt.Printf("DeviceFSM: entered PendingConfiguring state\n")
+			return d.sender.Send(StartConfigCommand{})
 		}
 	case "PendingConfiguring":
 		if _, ok := event.(DeviceAck); ok {
 			d.state = "Configuring"
 			fmt.Printf("DeviceFSM: entering Configuring state, starting tasks\n")
-			d.taskRunner = NewTaskRunner(buildTasks())
+			d.taskRunner = NewTaskRunner(buildTasks(d.sender))
 			return d.taskRunner.Start()
 		}
 	case "Configuring":
@@ -280,6 +318,7 @@ func (d *DeviceFSM) HandleEvent(event Event) error {
 			d.state = "EndingConfiguring"
 			fmt.Printf("DeviceFSM: tasks completed, entering EndingConfiguring state\n")
 			// send EndConfig
+			return d.sender.Send(EndConfigCommand{})
 		}
 	case "EndingConfiguring":
 		if _, ok := event.(DeviceAck); ok {
@@ -325,4 +364,64 @@ func (b *ExponentialBackoff) Next() time.Duration {
 
 func (b *ExponentialBackoff) Reset() {
 	b.curr = 0
+}
+
+// CommandSender code
+type DeviceCommandSender interface {
+	Send(cmd DeviceCommand) error
+}
+
+type DeviceCommand interface {}
+type StartConfigCommand struct{}
+type EndConfigCommand struct{}
+type SetSleepPeriodCommand struct{}
+type EndConfigAck struct{}
+type ValueUnlockCommand struct{}
+type SetProtectedValueCommand struct{}
+type ValueLockCommand struct{}
+
+type FakeSender struct {
+	eventsChan chan Event
+}
+
+func NewFakeSender(eventsChan chan Event) *FakeSender {
+	return &FakeSender{eventsChan: eventsChan}
+}
+
+func (s *FakeSender) Send(cmd DeviceCommand) error {
+	fmt.Printf("FakeSender: sending command %T\n", cmd)
+	time.Sleep(1 * time.Second)
+	// Simulate immediate ack for demo purposes
+	switch cmd.(type) {
+	case StartConfigCommand:
+		fmt.Printf("FakeSender: triggering mock response: DeviceAck\n")
+		go func() {
+			s.eventsChan <- DeviceAck{}
+		}()
+	case EndConfigCommand:
+		go func() {
+			s.eventsChan <- EndConfigAck{}
+		}()
+	case SetSleepPeriodCommand:
+		go func() {
+			s.eventsChan <- Timeout{}
+		}()
+
+		time.AfterFunc(3*time.Second, func() {
+			s.eventsChan <- DeviceAck{}
+		})
+	case ValueUnlockCommand:
+		go func() {
+			s.eventsChan <- DeviceAck{}
+		}()
+	case SetProtectedValueCommand:
+		go func() {
+			s.eventsChan <- DeviceAck{}
+		}()
+	case ValueLockCommand:
+		go func() {
+			s.eventsChan <- DeviceAck{}
+		}()
+	}
+	return nil
 }
