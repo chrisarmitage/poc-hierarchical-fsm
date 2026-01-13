@@ -85,7 +85,9 @@ type State string
 type Event any
 
 // sample events
-type DeviceAck struct{}
+type DeviceAck struct{
+	AckCode string
+}
 type DeviceReject struct{}
 type Timeout struct{}
 
@@ -191,8 +193,13 @@ func (t *SetSleepPeriodTask) HandleEvent(event Event) TaskResult {
 	fmt.Printf("SetSleepPeriodTask: handling event %T in state %s\n", event, t.state)
 	switch t.state {
 	case "Pending":
-		switch event.(type) {
+		switch e := event.(type) {
 		case DeviceAck:
+			if e.AckCode != "SLEEP_PERIOD" {
+				fmt.Printf("SetSleepPeriodTask: received ack for %s, ignoring\n", e.AckCode)
+				// This device ack if not for us
+				return TaskRunning
+			}
 			t.state = "Done"
 			fmt.Printf("SetSleepPeriodTask: acknowledged, task complete\n")
 			fmt.Printf("SetSleepPeriodTask: ** completed successfully\n")
@@ -240,8 +247,13 @@ func (t *SetProtectedValueTask) Start() error {
 func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 	switch t.state {
 	case "PendingValueUnlock":
-		switch event.(type) {
+		switch e := event.(type) {
 		case DeviceAck:
+			if e.AckCode != "VALUE_UNLOCK" {
+				fmt.Printf("SetProtectedValueTask: received ack for %s, ignoring\n", e.AckCode)
+				// This device ack if not for us
+				return TaskRunning
+			}
 			t.state = "PendingSetValue"
 			fmt.Printf("SetProtectedValueTask: value unlock acknowledged, sending set value command\n")
 			// send set value command to device
@@ -251,8 +263,13 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			return TaskFailedPermanent
 		}
 	case "PendingSetValue":
-		switch event.(type) {
+		switch e := event.(type) {
 		case DeviceAck:
+			if e.AckCode != "SET_PROTECTED_VALUE" {
+				fmt.Printf("SetProtectedValueTask: received ack for %s, ignoring\n", e.AckCode)
+				// This device ack if not for us
+				return TaskRunning
+			}
 			t.state = "PendingValueLock"
 			fmt.Printf("SetProtectedValueTask: set value acknowledged, sending value lock command\n")
 			// send value lock command to device
@@ -262,8 +279,13 @@ func (t *SetProtectedValueTask) HandleEvent(event Event) TaskResult {
 			return TaskFailedPermanent
 		}
 	case "PendingValueLock":
-		switch event.(type) {
+		switch e := event.(type) {
 		case DeviceAck:
+			if e.AckCode != "VALUE_LOCK" {
+				fmt.Printf("SetProtectedValueTask: received ack for %s, ignoring\n", e.AckCode)
+				// This device ack if not for us
+				return TaskRunning
+			}
 			t.state = "Done"
 			fmt.Printf("SetProtectedValueTask: value lock acknowledged, task complete\n")
 			fmt.Printf("SetProtectedValueTask: ** completed successfully\n")
@@ -408,19 +430,45 @@ func (s *FakeSender) Send(cmd DeviceCommand) error {
 		}()
 
 		time.AfterFunc(3*time.Second, func() {
-			s.eventsChan <- DeviceAck{}
+			s.eventsChan <- DeviceAck{
+				AckCode: "OTHER_COMMAND",
+			}
+		})
+
+		time.AfterFunc(6*time.Second, func() {
+			s.eventsChan <- DeviceAck{
+				AckCode: "SLEEP_PERIOD",
+			}
 		})
 	case ValueUnlockCommand:
 		go func() {
-			s.eventsChan <- DeviceAck{}
+			s.eventsChan <- DeviceAck{
+				AckCode: "VALUE_UNLOCK",
+			}
+
+			// send earlier ack again to test idempotency
+			time.Sleep(2 * time.Second)
+			s.eventsChan <- DeviceAck{
+				AckCode: "SLEEP_PERIOD",
+			}
 		}()
 	case SetProtectedValueCommand:
 		go func() {
-			s.eventsChan <- DeviceAck{}
+			s.eventsChan <- DeviceAck{
+				AckCode: "SET_PROTECTED_VALUE",
+			}
+
+			// send earlier ack again to test idempotency
+			time.Sleep(2 * time.Second)
+			s.eventsChan <- DeviceAck{
+				AckCode: "SLEEP_PERIOD",
+			}
 		}()
 	case ValueLockCommand:
 		go func() {
-			s.eventsChan <- DeviceAck{}
+			s.eventsChan <- DeviceAck{
+				AckCode: "VALUE_LOCK",
+			}
 		}()
 	}
 	return nil
