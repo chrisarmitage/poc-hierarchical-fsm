@@ -96,6 +96,8 @@ func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
 		return false, nil
 
 	case tasks.TaskFailedPermanent:
+		// Cancel timeout for failed task
+		tr.cancelTimeout()
 		return false, fmt.Errorf("task %s failed", task.Name())
 	}
 
