@@ -73,8 +73,18 @@ func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
 		return false, nil
 
 	case tasks.TaskFailedRetryable:
-		// optional: retry entire task
-		return false, task.Start()
+		// Cancel existing timeout before retry
+		tr.cancelTimeout()
+
+		// Retry the task
+		err := task.Start()
+		if err != nil {
+			return false, err
+		}
+
+		// Arm new timeout for retry
+		tr.armTimeout()
+		return false, nil
 
 	case tasks.TaskFailedPermanent:
 		return false, fmt.Errorf("task %s failed", task.Name())
