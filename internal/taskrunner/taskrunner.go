@@ -28,7 +28,14 @@ func (tr *TaskRunner) Start() error {
 		return nil
 	}
 	fmt.Println("TaskRunner: starting")
-	return tr.tasks[tr.index].Start()
+	err := tr.tasks[tr.index].Start()
+	if err != nil {
+		return err
+	}
+
+	// Arm timeout for the first task
+	tr.armTimeout()
+	return nil
 }
 
 func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
@@ -63,6 +70,16 @@ func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
 	}
 
 	return false, nil
+}
+
+func (tr *TaskRunner) armTimeout() {
+	if tr.index >= len(tr.tasks) {
+		return
+	}
+
+	task := tr.tasks[tr.index]
+	duration := task.GetTimeoutDuration()
+	tr.timeoutManager.Arm(task.Name(), duration)
 }
 
 func BuildTasks(s sender.DeviceCommandSender) []tasks.Task {
