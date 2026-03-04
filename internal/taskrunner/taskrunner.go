@@ -6,16 +6,21 @@ import (
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/tasks"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/timeoutmanager"
 )
 
 // Task runner. Contains multiple tasks to be executed in sequence.
 type TaskRunner struct {
-	tasks []tasks.Task
-	index int
+	tasks          []tasks.Task
+	index          int
+	timeoutManager *timeoutmanager.TimeoutManager
 }
 
-func NewTaskRunner(tasks []tasks.Task) *TaskRunner {
-	return &TaskRunner{tasks: tasks}
+func NewTaskRunner(tasks []tasks.Task, timeoutManager *timeoutmanager.TimeoutManager) *TaskRunner {
+	return &TaskRunner{
+		tasks:          tasks,
+		timeoutManager: timeoutManager,
+	}
 }
 
 func (tr *TaskRunner) Start() error {

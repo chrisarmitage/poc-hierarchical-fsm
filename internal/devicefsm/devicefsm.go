@@ -7,17 +7,23 @@ import (
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/taskrunner"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/tasks"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/timeoutmanager"
 )
 
 // device-level FSM
 type DeviceFSM struct {
-	state      tasks.State
-	taskRunner *taskrunner.TaskRunner
-	sender     sender.DeviceCommandSender
+	state          tasks.State
+	taskRunner     *taskrunner.TaskRunner
+	sender         sender.DeviceCommandSender
+	timeoutManager *timeoutmanager.TimeoutManager
 }
 
-func NewDeviceFSM(sender sender.DeviceCommandSender) *DeviceFSM {
-	return &DeviceFSM{state: "Ready", sender: sender}
+func NewDeviceFSM(sender sender.DeviceCommandSender, timeoutManager *timeoutmanager.TimeoutManager) *DeviceFSM {
+	return &DeviceFSM{
+		state:          "Ready",
+		sender:         sender,
+		timeoutManager: timeoutManager,
+	}
 }
 
 func (d *DeviceFSM) HandleEvent(event events.Event) error {
@@ -35,7 +41,7 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 		if _, ok := event.(events.DeviceAck); ok {
 			d.state = "Configuring"
 			fmt.Printf("DeviceFSM: entering Configuring state, starting tasks\n")
-			d.taskRunner = taskrunner.NewTaskRunner(taskrunner.BuildTasks(d.sender))
+			d.taskRunner = taskrunner.NewTaskRunner(taskrunner.BuildTasks(d.sender), d.timeoutManager)
 			return d.taskRunner.Start()
 		}
 	case "Configuring":
