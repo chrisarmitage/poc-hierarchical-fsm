@@ -55,11 +55,22 @@ func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
 		return false, nil
 
 	case tasks.TaskSucceeded:
+		// Cancel timeout for completed task
+		tr.cancelTimeout()
+
+		// Move to next task
 		tr.index++
 		if tr.index >= len(tr.tasks) {
 			return true, nil
 		}
-		return false, tr.tasks[tr.index].Start()
+
+		// Start next task and arm its timeout
+		err := tr.tasks[tr.index].Start()
+		if err != nil {
+			return false, err
+		}
+		tr.armTimeout()
+		return false, nil
 
 	case tasks.TaskFailedRetryable:
 		// optional: retry entire task
@@ -80,6 +91,16 @@ func (tr *TaskRunner) armTimeout() {
 	task := tr.tasks[tr.index]
 	duration := task.GetTimeoutDuration()
 	tr.timeoutManager.Arm(task.Name(), duration)
+}
+
+// cancelTimeout cancels the timeout timer for the current task
+func (tr *TaskRunner) cancelTimeout() {
+	if tr.index >= len(tr.tasks) {
+		return
+	}
+
+	task := tr.tasks[tr.index]
+	tr.timeoutManager.Cancel(task.Name())
 }
 
 func BuildTasks(s sender.DeviceCommandSender) []tasks.Task {
