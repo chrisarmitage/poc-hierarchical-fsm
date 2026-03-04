@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
@@ -9,16 +10,24 @@ import (
 
 // Multi-step task example
 type SetProtectedValueTask struct {
-	state  State
-	sender sender.DeviceCommandSender
+	state           State
+	sender          sender.DeviceCommandSender
+	timeoutDuration time.Duration
 }
 
 func NewSetProtectedValueTask(sender sender.DeviceCommandSender) *SetProtectedValueTask {
-	return &SetProtectedValueTask{sender: sender}
+	return &SetProtectedValueTask{
+		sender:          sender,
+		timeoutDuration: 10 * time.Second, 
+	}
 }
 
 func (t *SetProtectedValueTask) Name() string {
 	return "SetProtectedValue"
+}
+
+func (t *SetProtectedValueTask) GetTimeoutDuration() time.Duration {
+	return t.timeoutDuration
 }
 
 func (t *SetProtectedValueTask) Start() error {

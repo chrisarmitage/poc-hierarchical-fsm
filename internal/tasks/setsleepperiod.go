@@ -11,19 +11,27 @@ import (
 
 // Single-step task example
 type SetSleepPeriodTask struct {
-	state State
-	retries int
-	max     int
-	backoff backoff.Backoff
-	sender sender.DeviceCommandSender
+	state           State
+	retries         int
+	max             int
+	backoff         backoff.Backoff
+	sender          sender.DeviceCommandSender
+	timeoutDuration time.Duration
 }
 
 func NewSetSleepPeriodTask(sender sender.DeviceCommandSender) *SetSleepPeriodTask {
-	return &SetSleepPeriodTask{sender: sender}
+	return &SetSleepPeriodTask{
+		sender:          sender,
+		timeoutDuration: 10 * time.Second,
+	}
 }
 
 func (t *SetSleepPeriodTask) Name() string {
 	return "SetSleepPeriod"
+}
+
+func (t *SetSleepPeriodTask) GetTimeoutDuration() time.Duration {
+	return t.timeoutDuration
 }
 
 func (t *SetSleepPeriodTask) Start() error {
