@@ -46,6 +46,15 @@ func (tr *TaskRunner) HandleEvent(event events.Event) (done bool, err error) {
 	fmt.Printf("TaskRunner: handling event %T for activetask %s\n", event, tr.tasks[tr.index].Name())
 
 	task := tr.tasks[tr.index]
+
+	// Check if this timeout event is for the current task
+	if timeoutEvent, ok := event.(events.Timeout); ok {
+		if timeoutEvent.TaskID != task.Name() {
+			fmt.Printf("TaskRunner: ignoring timeout for task %s (current task is %s)\n", timeoutEvent.TaskID, task.Name())
+			return false, nil
+		}
+	}
+
 	result := task.HandleEvent(event)
 
 	fmt.Printf("TaskRunner: task %s returned result %d\n", task.Name(), result)
