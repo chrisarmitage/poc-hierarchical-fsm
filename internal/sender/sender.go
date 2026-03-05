@@ -36,20 +36,18 @@ func (s *FakeSender) Send(cmd events.DeviceCommand) error {
 		}()
 	case events.SetSleepPeriodCommand:
 		go func() {
-			s.eventsChan <- events.Timeout{}
+			// time.AfterFunc(3*time.Second, func() {
+			// 	s.eventsChan <- events.DeviceAck{
+			// 		AckCode: "OTHER_COMMAND",
+			// 	}
+			// })
+
+			time.AfterFunc(40*time.Second, func() {
+				s.eventsChan <- events.DeviceAck{
+					AckCode: "SLEEP_PERIOD",
+				}
+			})
 		}()
-
-		time.AfterFunc(3*time.Second, func() {
-			s.eventsChan <- events.DeviceAck{
-				AckCode: "OTHER_COMMAND",
-			}
-		})
-
-		time.AfterFunc(6*time.Second, func() {
-			s.eventsChan <- events.DeviceAck{
-				AckCode: "SLEEP_PERIOD",
-			}
-		})
 	case events.ValueUnlockCommand:
 		go func() {
 			s.eventsChan <- events.DeviceAck{

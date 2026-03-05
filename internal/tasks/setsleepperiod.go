@@ -11,19 +11,27 @@ import (
 
 // Single-step task example
 type SetSleepPeriodTask struct {
-	state State
-	retries int
-	max     int
-	backoff backoff.Backoff
-	sender sender.DeviceCommandSender
+	state           State
+	retries         int
+	max             int
+	backoff         backoff.Backoff
+	sender          sender.DeviceCommandSender
+	timeoutDuration time.Duration
 }
 
 func NewSetSleepPeriodTask(sender sender.DeviceCommandSender) *SetSleepPeriodTask {
-	return &SetSleepPeriodTask{sender: sender}
+	return &SetSleepPeriodTask{
+		sender:          sender,
+		timeoutDuration: 10 * time.Second,
+	}
 }
 
 func (t *SetSleepPeriodTask) Name() string {
 	return "SetSleepPeriod"
+}
+
+func (t *SetSleepPeriodTask) GetTimeoutDuration() time.Duration {
+	return t.timeoutDuration
 }
 
 func (t *SetSleepPeriodTask) Start() error {
@@ -61,9 +69,12 @@ func (t *SetSleepPeriodTask) HandleEvent(event events.Event) TaskResult {
 			}
 			backoffDuration := t.backoff.Next()
 			fmt.Printf("SetSleepPeriodTask: timeout, retrying in %v (attempt %d/%d)\n", backoffDuration, t.retries, t.max)
-			time.Sleep(backoffDuration)
-			// resend command to device
-			return TaskRunning
+
+			// Update timeout duration to include backoff
+			t.timeoutDuration = backoffDuration + 10*time.Second
+
+			// Signal retry - TaskRunner will cancel old timeout, call Start(), and arm new timeout
+			return TaskFailedRetryable
 		case events.DeviceReject:
 			return TaskFailedPermanent
 		}

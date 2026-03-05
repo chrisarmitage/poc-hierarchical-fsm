@@ -8,7 +8,9 @@ type DeviceAck struct{
 	AckCode string
 }
 type DeviceReject struct{}
-type Timeout struct{}
+type Timeout struct {
+	TaskID string
+}
 
 type StartConfig struct{}
 

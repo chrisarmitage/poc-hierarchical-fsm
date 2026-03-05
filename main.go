@@ -7,6 +7,7 @@ import (
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/devicefsm"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/timeoutmanager"
 )
 
 func main() {
@@ -14,8 +15,12 @@ func main() {
 
 	s := sender.NewFakeSender(eventsChan)
 
+	// Create timeout manager
+	timeoutMgr := timeoutmanager.NewTimeoutManager(eventsChan)
+	defer timeoutMgr.CancelAll() // Ensure cleanup on exit
+
 	// init DeviceFSM
-	deviceFSM := devicefsm.NewDeviceFSM(s)
+	deviceFSM := devicefsm.NewDeviceFSM(s, timeoutMgr)
 
 	// send intiial event
 	go func() {
