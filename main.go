@@ -2,15 +2,28 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/devicefsm"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/timeoutmanager"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/webserver"
 )
 
 func main() {
+	// Create web server
+	webServer := webserver.NewServer()
+
+	// Start web server in background
+	go func() {
+		log.Println("Starting web server on http://localhost:8080")
+		if err := webServer.Start(":8080"); err != nil {
+			log.Fatalf("Failed to start web server: %v", err)
+		}
+	}()
+
 	eventsChan := make(chan events.Event)
 
 	s := sender.NewFakeSender(eventsChan)
