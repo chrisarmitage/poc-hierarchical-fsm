@@ -33,11 +33,11 @@ func main() {
 	defer timeoutMgr.CancelAll() // Ensure cleanup on exit
 
 	// init DeviceFSM
-	deviceFSM := devicefsm.NewDeviceFSM(s, timeoutMgr)
+	deviceFSM := devicefsm.NewDeviceFSM(s, timeoutMgr, webServer.GetBroadcastChannel())
 
 	// send intiial event
 	go func() {
-		time.Sleep(1 * time.Second)
+		time.Sleep(5 * time.Second)
 		eventsChan <- events.StartConfig{}
 	}()
 

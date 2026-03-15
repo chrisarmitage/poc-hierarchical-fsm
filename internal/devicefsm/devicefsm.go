@@ -16,13 +16,15 @@ type DeviceFSM struct {
 	taskRunner     *taskrunner.TaskRunner
 	sender         sender.DeviceCommandSender
 	timeoutManager *timeoutmanager.TimeoutManager
+	broadcastChan chan<- string
 }
 
-func NewDeviceFSM(sender sender.DeviceCommandSender, timeoutManager *timeoutmanager.TimeoutManager) *DeviceFSM {
+func NewDeviceFSM(sender sender.DeviceCommandSender, timeoutManager *timeoutmanager.TimeoutManager, broadcastChan chan<- string) *DeviceFSM {
 	return &DeviceFSM{
 		state:          "Ready",
 		sender:         sender,
 		timeoutManager: timeoutManager,
+		broadcastChan: broadcastChan,
 	}
 }
 
@@ -33,6 +35,7 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 		if _, ok := event.(events.StartConfig); ok {
 			// Enter config mode
 			d.state = "PendingConfiguring"
+			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered PendingConfiguring state")
 			// send StartConfig command
 			fmt.Printf("DeviceFSM: entered PendingConfiguring state\n")
 			return d.sender.Send(events.StartConfigCommand{})
@@ -40,6 +43,7 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 	case "PendingConfiguring":
 		if _, ok := event.(events.DeviceAck); ok {
 			d.state = "Configuring"
+			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered Configuring state")
 			fmt.Printf("DeviceFSM: entering Configuring state, starting tasks\n")
 			d.taskRunner = taskrunner.NewTaskRunner(taskrunner.BuildTasks(d.sender), d.timeoutManager)
 			return d.taskRunner.Start()
@@ -50,12 +54,14 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 		if err != nil {
 			// abort policy decision here
 			d.state = "EndingConfiguring"
+			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered EndingConfiguring state")
 			fmt.Printf("DeviceFSM: task runner error, entering EndingConfiguring state\n")
 			// send EndConfig
 			return err
 		}
 		if done {
 			d.state = "EndingConfiguring"
+			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered EndingConfiguring state")
 			fmt.Printf("DeviceFSM: tasks completed, entering EndingConfiguring state\n")
 			// send EndConfig
 			return d.sender.Send(events.EndConfigCommand{})
@@ -63,6 +69,7 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 	case "EndingConfiguring":
 		if _, ok := event.(events.DeviceAck); ok {
 			d.state = "Ready"
+			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered Ready state")
 			fmt.Printf("DeviceFSM: configuration ended, entering Ready state\n")
 			fmt.Printf("DeviceFSM: ** all tasks completed successfully **\n")
 		}

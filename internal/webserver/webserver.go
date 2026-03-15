@@ -16,12 +16,37 @@ var staticFiles embed.FS
 type Server struct {
 	clients    map[chan string]bool
 	clientsMux sync.RWMutex
+	broadcaster chan string
 }
 
 func NewServer() *Server {
-	return &Server{
-		clients: make(map[chan string]bool),
+	s := &Server{
+		clients:    make(map[chan string]bool),
+		broadcaster: make(chan string, 100),
 	}
+
+	// Start broadcaster goroutine
+	go s.broadcastLoop()
+
+	return s
+}
+
+func (s *Server) broadcastLoop() {
+	for update := range s.broadcaster {
+		s.clientsMux.RLock()
+		for client := range s.clients {
+			select {
+			case client <- update:
+			default:
+				// Client buffer full, skip
+			}
+		}
+		s.clientsMux.RUnlock()
+	}
+}
+
+func (s *Server) GetBroadcastChannel() chan<- string {
+	return s.broadcaster
 }
 
 func (s *Server) Start(addr string) error {
@@ -89,4 +114,8 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func (s *Server) BroadcastUpdate(update string) {
+	s.broadcaster <- update
 }
