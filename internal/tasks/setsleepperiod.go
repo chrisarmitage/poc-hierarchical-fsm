@@ -17,12 +17,14 @@ type SetSleepPeriodTask struct {
 	backoff         backoff.Backoff
 	sender          sender.DeviceCommandSender
 	timeoutDuration time.Duration
+	broadcastChan   chan<- map[string]string
 }
 
-func NewSetSleepPeriodTask(sender sender.DeviceCommandSender) *SetSleepPeriodTask {
+func NewSetSleepPeriodTask(sender sender.DeviceCommandSender, broadcastChan chan<- map[string]string) *SetSleepPeriodTask {
 	return &SetSleepPeriodTask{
 		sender:          sender,
 		timeoutDuration: 10 * time.Second,
+		broadcastChan:   broadcastChan,
 	}
 }
 
@@ -36,6 +38,11 @@ func (t *SetSleepPeriodTask) GetTimeoutDuration() time.Duration {
 
 func (t *SetSleepPeriodTask) Start() error {
 	t.state = "Pending"
+	t.broadcastChan <- map[string]string{
+		"type":  "task",
+		"task":  "SetSleepPeriod",
+		"state": string(t.state),
+	}
 	t.retries = 0
 	t.max = 5
 	if t.backoff == nil {
@@ -59,10 +66,21 @@ func (t *SetSleepPeriodTask) HandleEvent(event events.Event) TaskResult {
 				return TaskRunning
 			}
 			t.state = "Done"
+			t.broadcastChan <- map[string]string{
+				"type":  "task",
+				"task":  "SetSleepPeriod",
+				"state": string(t.state),
+			}
 			fmt.Printf("SetSleepPeriodTask: acknowledged, task complete\n")
 			fmt.Printf("SetSleepPeriodTask: ** completed successfully\n")
 			return TaskSucceeded
 		case events.Timeout:
+
+			t.broadcastChan <- map[string]string{
+				"type": "task",
+				"task": "SetSleepPeriod",
+				"state": "timeout",
+			}
 			t.retries++
 			if t.retries > t.max {
 				return TaskFailedPermanent

@@ -14,12 +14,14 @@ type TaskRunner struct {
 	tasks          []tasks.Task
 	index          int
 	timeoutManager *timeoutmanager.TimeoutManager
+	broadcastChan chan<- map[string]string
 }
 
-func NewTaskRunner(tasks []tasks.Task, timeoutManager *timeoutmanager.TimeoutManager) *TaskRunner {
+func NewTaskRunner(tasks []tasks.Task, timeoutManager *timeoutmanager.TimeoutManager, broadcastChan chan<- map[string]string) *TaskRunner {
 	return &TaskRunner{
 		tasks:          tasks,
 		timeoutManager: timeoutManager,
+		broadcastChan: broadcastChan,
 	}
 }
 
@@ -124,10 +126,10 @@ func (tr *TaskRunner) cancelTimeout() {
 	tr.timeoutManager.Cancel(task.Name())
 }
 
-func BuildTasks(s sender.DeviceCommandSender) []tasks.Task {
+func BuildTasks(s sender.DeviceCommandSender, ch chan<- map[string]string) []tasks.Task {
 	return []tasks.Task{
-		tasks.NewSetSleepPeriodTask(s),
-		tasks.NewSetProtectedValueTask(s),
+		tasks.NewSetSleepPeriodTask(s, ch),
+		tasks.NewSetProtectedValueTask(s, ch),
 		// Add more tasks here
 	}
 }

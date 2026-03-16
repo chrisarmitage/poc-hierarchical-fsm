@@ -16,10 +16,14 @@ type DeviceFSM struct {
 	taskRunner     *taskrunner.TaskRunner
 	sender         sender.DeviceCommandSender
 	timeoutManager *timeoutmanager.TimeoutManager
-	broadcastChan chan<- string
+	broadcastChan chan<- map[string]string
 }
 
-func NewDeviceFSM(sender sender.DeviceCommandSender, timeoutManager *timeoutmanager.TimeoutManager, broadcastChan chan<- string) *DeviceFSM {
+func NewDeviceFSM(
+	sender sender.DeviceCommandSender, 
+	timeoutManager *timeoutmanager.TimeoutManager, 
+	broadcastChan chan<- map[string]string,
+) *DeviceFSM {
 	return &DeviceFSM{
 		state:          "Ready",
 		sender:         sender,
@@ -35,7 +39,11 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 		if _, ok := event.(events.StartConfig); ok {
 			// Enter config mode
 			d.state = "PendingConfiguring"
-			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered PendingConfiguring state")
+			d.broadcastChan <- map[string]string{
+				"type":   "state",
+				"system": "devicefsm",
+				"state":   string(d.state),
+			}
 			// send StartConfig command
 			fmt.Printf("DeviceFSM: entered PendingConfiguring state\n")
 			return d.sender.Send(events.StartConfigCommand{})
@@ -43,9 +51,13 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 	case "PendingConfiguring":
 		if _, ok := event.(events.DeviceAck); ok {
 			d.state = "Configuring"
-			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered Configuring state")
+			d.broadcastChan <- map[string]string{
+				"type":    "state",
+				"system": "devicefsm",
+				"state":   string(d.state),
+			}
 			fmt.Printf("DeviceFSM: entering Configuring state, starting tasks\n")
-			d.taskRunner = taskrunner.NewTaskRunner(taskrunner.BuildTasks(d.sender), d.timeoutManager)
+			d.taskRunner = taskrunner.NewTaskRunner(taskrunner.BuildTasks(d.sender, d.broadcastChan), d.timeoutManager, d.broadcastChan)
 			return d.taskRunner.Start()
 		}
 	case "Configuring":
@@ -54,22 +66,34 @@ func (d *DeviceFSM) HandleEvent(event events.Event) error {
 		if err != nil {
 			// abort policy decision here
 			d.state = "EndingConfiguring"
-			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered EndingConfiguring state")
+			d.broadcastChan <- map[string]string{
+				"type":    "state",
+				"system": "devicefsm",
+				"state":   string(d.state),
+			}
 			fmt.Printf("DeviceFSM: task runner error, entering EndingConfiguring state\n")
 			// send EndConfig
 			return err
 		}
 		if done {
 			d.state = "EndingConfiguring"
-			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered EndingConfiguring state")
+			d.broadcastChan <- map[string]string{
+				"type":    "state",
+				"system": "devicefsm",
+				"state":   string(d.state),
+			}
 			fmt.Printf("DeviceFSM: tasks completed, entering EndingConfiguring state\n")
 			// send EndConfig
 			return d.sender.Send(events.EndConfigCommand{})
 		}
 	case "EndingConfiguring":
-		if _, ok := event.(events.DeviceAck); ok {
+		if _, ok := event.(events.EndConfigAck); ok {
 			d.state = "Ready"
-			d.broadcastChan <- fmt.Sprintf("DeviceFSM: entered Ready state")
+			d.broadcastChan <- map[string]string{
+				"type":    "state",
+				"system": "devicefsm",
+				"state":   string(d.state),
+			}
 			fmt.Printf("DeviceFSM: configuration ended, entering Ready state\n")
 			fmt.Printf("DeviceFSM: ** all tasks completed successfully **\n")
 		}

@@ -14,15 +14,15 @@ import (
 var staticFiles embed.FS
 
 type Server struct {
-	clients    map[chan string]bool
+	clients    map[chan map[string]string]bool
 	clientsMux sync.RWMutex
-	broadcaster chan string
+	broadcaster chan map[string]string
 }
 
 func NewServer() *Server {
 	s := &Server{
-		clients:    make(map[chan string]bool),
-		broadcaster: make(chan string, 100),
+		clients:    make(map[chan map[string]string]bool),
+		broadcaster: make(chan map[string]string, 100),
 	}
 
 	// Start broadcaster goroutine
@@ -45,7 +45,7 @@ func (s *Server) broadcastLoop() {
 	}
 }
 
-func (s *Server) GetBroadcastChannel() chan<- string {
+func (s *Server) GetBroadcastChannel() chan<- map[string]string {
 	return s.broadcaster
 }
 
@@ -74,7 +74,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Create client channel
-	clientChan := make(chan string, 10)
+	clientChan := make(chan map[string]string, 10)
 
 	// Register client
 	s.clientsMux.Lock()
@@ -116,6 +116,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) BroadcastUpdate(update string) {
+func (s *Server) BroadcastUpdate(update map[string]string) {
 	s.broadcaster <- update
 }

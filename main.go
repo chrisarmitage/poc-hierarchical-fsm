@@ -56,4 +56,5 @@ func main() {
 	}
 
 	fmt.Println("All tasks completed successfully")
+	time.Sleep(500 * time.Millisecond) // Give web server time to send final update
 }

@@ -10,13 +10,77 @@
         <header>
             <h1>Hierarchical FSM Visualizer</h1>
         </header>
+        <main>
+            <table>
+                <tr>
+                    <td><strong>Device State</strong></td>
+                    <td id="device-ready">Ready</td>
+                    <td id="device-configuring">Configuring</td>
+                </tr>
+                <tr>
+                    <td><strong>SleepPeriod</strong></td>
+                    <td id="sleep-period-pending">Pending</td>
+                </tr>
+                <tr>
+                    <td><strong>ProtectedValue</strong></td>
+                    <td id="protected-value-unlock">Unlock</td>
+                    <td id="protected-value-set">Set</td>
+                    <td id="protected-value-lock">Lock</td>
+                </tr>
+            </table>
+        </main>
     </div>
 
     <script>
+        document.getElementById('device-ready').style.backgroundColor = 'lightgreen';
+                
     const eventSource = new EventSource('/events');
     eventSource.onmessage = function(event) {
         const data = JSON.parse(event.data);
         console.log('Received event:', data);
+        if (data.system === 'devicefsm') {
+            if (data.state === 'Ready') {
+                document.getElementById('device-ready').style.backgroundColor = 'lightgreen';
+                document.getElementById('device-configuring').style.backgroundColor = '';
+            } else if (data.state === 'PendingConfiguring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'lightblue';
+            } else if (data.state === 'Configuring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'EndingConfiguring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'pink';
+            }
+        }
+
+        if (data.type === 'task' && data.task === 'SetSleepPeriod') {
+            if (data.state === 'Pending') {
+                document.getElementById('sleep-period-pending').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'Done') {
+                document.getElementById('sleep-period-pending').style.backgroundColor = '';
+            }
+        }
+
+        if (data.type === 'task' && data.task === 'SetProtectedValue') {
+            if (data.state === 'PendingValueUnlock') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = 'lightgreen';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            } else if (data.state === 'PendingSetValue') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = 'lightgreen';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            } else if (data.state === 'PendingValueLock') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'Done') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            }
+        }
     }
     </script>
 </body>
