@@ -6,6 +6,7 @@ import (
 
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/webserver"
 )
 
 // Multi-step task example
@@ -13,10 +14,10 @@ type SetProtectedValueTask struct {
 	state           State
 	sender          sender.DeviceCommandSender
 	timeoutDuration time.Duration
-	broadcastChan   chan<- map[string]string
+	broadcastChan   chan<- webserver.StateUpdate
 }
 
-func NewSetProtectedValueTask(sender sender.DeviceCommandSender, broadcastChan chan<- map[string]string) *SetProtectedValueTask {
+func NewSetProtectedValueTask(sender sender.DeviceCommandSender, broadcastChan chan<- webserver.StateUpdate) *SetProtectedValueTask {
 	return &SetProtectedValueTask{
 		sender:          sender,
 		timeoutDuration: 10 * time.Second,
@@ -34,10 +35,10 @@ func (t *SetProtectedValueTask) GetTimeoutDuration() time.Duration {
 
 func (t *SetProtectedValueTask) Start() error {
 	t.state = "PendingValueUnlock"
-	t.broadcastChan <- map[string]string{
-		"type":  "task",
-		"task":  "SetProtectedValue",
-		"state": string(t.state),
+	t.broadcastChan <- webserver.StateUpdate{
+		Type:  "task",
+		System: "SetProtectedValue",
+		State: string(t.state),
 	}
 	fmt.Printf("SetProtectedValueTask: sending value unlock command\n")
 	// send command to device
@@ -56,10 +57,10 @@ func (t *SetProtectedValueTask) HandleEvent(event events.Event) TaskResult {
 				return TaskRunning
 			}
 			t.state = "PendingSetValue"
-			t.broadcastChan <- map[string]string{
-				"type": "task",
-				"task": "SetProtectedValue",
-				"state": string(t.state),
+			t.broadcastChan <- webserver.StateUpdate{
+				Type:  "task",
+				System: "SetProtectedValue",
+				State: string(t.state),
 			}
 			fmt.Printf("SetProtectedValueTask: value unlock acknowledged, sending set value command\n")
 			// send set value command to device
@@ -77,10 +78,10 @@ func (t *SetProtectedValueTask) HandleEvent(event events.Event) TaskResult {
 				return TaskRunning
 			}
 			t.state = "PendingValueLock"
-			t.broadcastChan <- map[string]string{
-				"type": "task",
-				"task": "SetProtectedValue",
-				"state": string(t.state),
+			t.broadcastChan <- webserver.StateUpdate{
+				Type:  "task",
+				System: "SetProtectedValue",
+				State: string(t.state),
 			}
 			fmt.Printf("SetProtectedValueTask: set value acknowledged, sending value lock command\n")
 			// send value lock command to device
@@ -98,10 +99,10 @@ func (t *SetProtectedValueTask) HandleEvent(event events.Event) TaskResult {
 				return TaskRunning
 			}
 			t.state = "Done"
-			t.broadcastChan <- map[string]string{
-				"type": "task",
-				"task": "SetProtectedValue",
-				"state": string(t.state),
+			t.broadcastChan <- webserver.StateUpdate{
+				Type:  "task",
+				System: "SetProtectedValue",
+				State: string(t.state),
 			}
 			fmt.Printf("SetProtectedValueTask: value lock acknowledged, task complete\n")
 			fmt.Printf("SetProtectedValueTask: ** completed successfully\n")

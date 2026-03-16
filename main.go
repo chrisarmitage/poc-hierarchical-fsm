@@ -13,8 +13,10 @@ import (
 )
 
 func main() {
+	eventsChan := make(chan events.Event)
+
 	// Create web server
-	webServer := webserver.NewServer()
+	webServer := webserver.NewServer(eventsChan)
 
 	// Start web server in background
 	go func() {
@@ -24,9 +26,8 @@ func main() {
 		}
 	}()
 
-	eventsChan := make(chan events.Event)
-
-	s := sender.NewFakeSender(eventsChan)
+	// s := sender.NewFakeSender(eventsChan)
+	s := sender.NewWebSender(eventsChan, webServer.GetBroadcastChannel())
 
 	// Create timeout manager
 	timeoutMgr := timeoutmanager.NewTimeoutManager(eventsChan)

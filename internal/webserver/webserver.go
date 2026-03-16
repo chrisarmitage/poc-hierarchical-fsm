@@ -8,21 +8,33 @@ import (
 	"log"
 	"net/http"
 	"sync"
+
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 )
 
 //go:embed static/*
 var staticFiles embed.FS
 
 type Server struct {
-	clients    map[chan map[string]string]bool
-	clientsMux sync.RWMutex
-	broadcaster chan map[string]string
+	clients     map[chan StateUpdate]bool
+	clientsMux  sync.RWMutex
+	broadcaster chan StateUpdate
+	eventsChan  chan events.Event
 }
 
-func NewServer() *Server {
+type StateUpdate struct {
+	Type      string `json:"type"`             // "state" for FSM listener, "payload" for comms to device
+	System    string `json:"system,omitempty"` // e.g. "devicefsm", "SetProtectedValueTask"
+	Timestamp string `json:"timestamp"`
+	State     string `json:"state,omitempty"`
+	Payload   string `json:"payload,omitempty"` // comms for device
+}
+
+func NewServer(eventsChan chan events.Event) *Server {
 	s := &Server{
-		clients:    make(map[chan map[string]string]bool),
-		broadcaster: make(chan map[string]string, 100),
+		clients:     make(map[chan StateUpdate]bool),
+		broadcaster: make(chan StateUpdate, 100),
+		eventsChan:  eventsChan,
 	}
 
 	// Start broadcaster goroutine
@@ -45,7 +57,7 @@ func (s *Server) broadcastLoop() {
 	}
 }
 
-func (s *Server) GetBroadcastChannel() chan<- map[string]string {
+func (s *Server) GetBroadcastChannel() chan<- StateUpdate {
 	return s.broadcaster
 }
 
@@ -62,8 +74,62 @@ func (s *Server) Start(addr string) error {
 	// SSE endpoint
 	mux.HandleFunc("/events", s.handleSSE)
 
+	// Uplink endpoint
+	mux.HandleFunc("/uplink", s.handleUplink)
+
 	log.Printf("Web server starting on %s", addr)
 	return http.ListenAndServe(addr, mux)
+}
+
+func (s *Server) handleUplink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		Device  string `json:"device"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Received uplink from device %s: %s", payload.Device, payload.Message)
+
+	switch payload.Message {
+	case "StartConfigAck":
+		go func() {
+			s.eventsChan <- events.DeviceAck{}
+		}()
+	case "EndConfigAck":
+		go func() {
+			s.eventsChan <- events.EndConfigAck{}
+		}()
+	case "SetSleepPeriodAck":
+		go func() {
+			s.eventsChan <- events.DeviceAck{AckCode: "SLEEP_PERIOD"}
+		}()
+	case "ValueUnlockAck":
+		go func() {
+			s.eventsChan <- events.DeviceAck{
+				AckCode: "VALUE_UNLOCK",
+			}
+		}()
+	case "ValueSetAck":
+		go func() {
+			s.eventsChan <- events.DeviceAck{
+				AckCode: "SET_PROTECTED_VALUE",
+			}
+		}()
+	case "ValueLockAck":
+		go func() {
+			s.eventsChan <- events.DeviceAck{
+				AckCode: "VALUE_LOCK",
+			}
+		}()
+	}
 }
 
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +140,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Create client channel
-	clientChan := make(chan map[string]string, 10)
+	clientChan := make(chan StateUpdate, 10)
 
 	// Register client
 	s.clientsMux.Lock()
@@ -116,6 +182,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) BroadcastUpdate(update map[string]string) {
+func (s *Server) BroadcastUpdate(update StateUpdate) {
 	s.broadcaster <- update
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/tasks"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/timeoutmanager"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/webserver"
 )
 
 // Task runner. Contains multiple tasks to be executed in sequence.
@@ -14,10 +15,10 @@ type TaskRunner struct {
 	tasks          []tasks.Task
 	index          int
 	timeoutManager *timeoutmanager.TimeoutManager
-	broadcastChan chan<- map[string]string
+	broadcastChan chan<- webserver.StateUpdate
 }
 
-func NewTaskRunner(tasks []tasks.Task, timeoutManager *timeoutmanager.TimeoutManager, broadcastChan chan<- map[string]string) *TaskRunner {
+func NewTaskRunner(tasks []tasks.Task, timeoutManager *timeoutmanager.TimeoutManager, broadcastChan chan<- webserver.StateUpdate) *TaskRunner {
 	return &TaskRunner{
 		tasks:          tasks,
 		timeoutManager: timeoutManager,
@@ -126,7 +127,7 @@ func (tr *TaskRunner) cancelTimeout() {
 	tr.timeoutManager.Cancel(task.Name())
 }
 
-func BuildTasks(s sender.DeviceCommandSender, ch chan<- map[string]string) []tasks.Task {
+func BuildTasks(s sender.DeviceCommandSender, ch chan<- webserver.StateUpdate) []tasks.Task {
 	return []tasks.Task{
 		tasks.NewSetSleepPeriodTask(s, ch),
 		tasks.NewSetProtectedValueTask(s, ch),
