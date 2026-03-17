@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hierarchical FSM Visualizer</title>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Hierarchical FSM Visualizer</h1>
+        </header>
+        <main>
+            <table>
+                <tr>
+                    <th colspan="3">Physical Device</th>
+                    <th>FSM</th>
+                </tr>
+                <tr>
+                    <td>Device A</td>
+                    <td>
+                        <label>
+                            <input type="checkbox" id="device-a-auto" checked>
+                            Auto
+                        </label>
+                    </td>
+                    <td>
+                        <button id="device-a-ack" disabled>Ack</button>
+                    </td>
+
+                    <td id="device-a-state">
+                        State:
+                        <span id="device-a-state-ready">Ready</span> 
+                        <span id="device-a-state-entering-configuring">-></span>
+                        <span id="device-a-state-configuring">Configuring</span>
+                        <span id="device-a-state-exiting-configuring">-></span>
+                    </td>
+                </tr>
+            </table>
+
+            <table>
+                <tr>
+                    <td><strong>Device State</strong></td>
+                    <td id="device-ready">Ready</td>
+                    <td id="device-configuring">Configuring</td>
+                </tr>
+                <tr>
+                    <td><strong>SleepPeriod</strong></td>
+                    <td id="sleep-period-pending">Pending</td>
+                </tr>
+                <tr>
+                    <td><strong>ProtectedValue</strong></td>
+                    <td id="protected-value-unlock">Unlock</td>
+                    <td id="protected-value-set">Set</td>
+                    <td id="protected-value-lock">Lock</td>
+                </tr>
+            </table>
+        </main>
+    </div>
+
+    <script>
+        document.getElementById('device-ready').style.backgroundColor = 'lightgreen';
+        document.getElementById('device-a-state-ready').style.backgroundColor = 'lightgreen';
+                
+    const eventSource = new EventSource('/events');
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log('Received event:', data);
+
+        if (data.type === 'payload') {
+            processPayload(data)
+        }
+
+        if (data.system === 'devicefsm') {
+            document.querySelectorAll('#device-a-state span').forEach(el => el.style.backgroundColor = '');
+            
+            if (data.state === 'Ready') {
+                document.getElementById('device-ready').style.backgroundColor = 'lightgreen';
+                document.getElementById('device-configuring').style.backgroundColor = '';
+                
+                document.getElementById('device-a-state-ready').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'PendingConfiguring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'lightgreen';
+            
+                document.getElementById('device-a-state-entering-configuring').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'Configuring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'lightgreen';
+            
+                document.getElementById('device-a-state-configuring').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'EndingConfiguring') {
+                document.getElementById('device-ready').style.backgroundColor = '';
+                document.getElementById('device-configuring').style.backgroundColor = 'pink';
+
+                document.getElementById('device-a-state-exiting-configuring').style.backgroundColor = 'lightgreen';
+            }
+        }
+
+        if (data.type === 'task' && data.system === 'SetSleepPeriod') {
+            if (data.state === 'Pending') {
+                document.getElementById('sleep-period-pending').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'Done') {
+                document.getElementById('sleep-period-pending').style.backgroundColor = '';
+            }
+        }
+
+        if (data.type === 'task' && data.system === 'SetProtectedValue') {
+            if (data.state === 'PendingValueUnlock') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = 'lightgreen';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            } else if (data.state === 'PendingSetValue') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = 'lightgreen';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            } else if (data.state === 'PendingValueLock') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = 'lightgreen';
+            } else if (data.state === 'Done') {
+                document.getElementById('protected-value-unlock').style.backgroundColor = '';
+                document.getElementById('protected-value-set').style.backgroundColor = '';
+                document.getElementById('protected-value-lock').style.backgroundColor = '';
+            }
+        }
+    }
+
+    function processPayload(data) {
+        var message = ""
+        switch (data.payload) {
+            case "events.StartConfigCommand":
+                message = "StartConfigAck"
+                break;
+            case "events.EndConfigCommand":
+                message = "EndConfigAck"
+                break;
+            case "events.SetSleepPeriodCommand":
+                message = "SetSleepPeriodAck"
+                break;
+            case "events.ValueUnlockCommand":
+                message = "ValueUnlockAck"
+                break;
+            case "events.SetProtectedValueCommand":
+                message = "ValueSetAck"
+                break;
+            case "events.ValueLockCommand":
+                message = "ValueLockAck"
+                break;
+            default:
+                console.error("Unknown payload:", data.payload);
+        }
+
+        // assume auto mode
+        if (message != "") {
+            setTimeout(() => {
+                fetch('/uplink', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(
+                        { 
+                            device: 'DeviceA',
+                            message: message,
+                        }
+                    )
+                });
+            }, 2000);
+        }
+    }
+    </script>
+</body>
+</html>

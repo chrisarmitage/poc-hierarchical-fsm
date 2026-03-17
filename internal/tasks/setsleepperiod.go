@@ -7,6 +7,7 @@ import (
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/backoff"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/events"
 	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/sender"
+	"github.com/chrisarmitage/poc-hierarchical-fsm/internal/webserver"
 )
 
 // Single-step task example
@@ -17,12 +18,14 @@ type SetSleepPeriodTask struct {
 	backoff         backoff.Backoff
 	sender          sender.DeviceCommandSender
 	timeoutDuration time.Duration
+	broadcastChan   chan<- webserver.StateUpdate
 }
 
-func NewSetSleepPeriodTask(sender sender.DeviceCommandSender) *SetSleepPeriodTask {
+func NewSetSleepPeriodTask(sender sender.DeviceCommandSender, broadcastChan chan<- webserver.StateUpdate) *SetSleepPeriodTask {
 	return &SetSleepPeriodTask{
 		sender:          sender,
 		timeoutDuration: 10 * time.Second,
+		broadcastChan:   broadcastChan,
 	}
 }
 
@@ -36,6 +39,11 @@ func (t *SetSleepPeriodTask) GetTimeoutDuration() time.Duration {
 
 func (t *SetSleepPeriodTask) Start() error {
 	t.state = "Pending"
+	t.broadcastChan <- webserver.StateUpdate{
+		Type:  "task",
+		System: "SetSleepPeriod",
+		State: string(t.state),
+	}
 	t.retries = 0
 	t.max = 5
 	if t.backoff == nil {
@@ -59,10 +67,21 @@ func (t *SetSleepPeriodTask) HandleEvent(event events.Event) TaskResult {
 				return TaskRunning
 			}
 			t.state = "Done"
+			t.broadcastChan <- webserver.StateUpdate{
+				Type:  "task",
+				System: "SetSleepPeriod",
+				State: string(t.state),
+			}
 			fmt.Printf("SetSleepPeriodTask: acknowledged, task complete\n")
 			fmt.Printf("SetSleepPeriodTask: ** completed successfully\n")
 			return TaskSucceeded
 		case events.Timeout:
+
+			t.broadcastChan <- webserver.StateUpdate{
+				Type:  "task",
+				System: "SetSleepPeriod",
+				State: "timeout",
+			}
 			t.retries++
 			if t.retries > t.max {
 				return TaskFailedPermanent
